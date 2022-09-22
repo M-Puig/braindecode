@@ -20,6 +20,7 @@ from glob import glob
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, ConcatDataset
+import webdataset as wds
 
 
 def _create_description(description):
@@ -113,18 +114,16 @@ class BaseDataset(Dataset):
             self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
-        if target_name is not None and not isinstance(target_name, (str, tuple, list)):
-            raise ValueError('target_name has to be None, str, tuple or list')
+        if target_name is not None and type(target_name) not in [str, tuple]:
+            raise ValueError('target_name has to be None, str, tuple')
         if target_name is None:
             return target_name
         else:
             # convert tuple of names or single name to list
             if isinstance(target_name, tuple):
                 target_name = [name for name in target_name]
-            elif not isinstance(target_name, list):
-                assert isinstance(target_name, str)
+            else:
                 target_name = [target_name]
-            assert isinstance(target_name, list)
             # check if target name(s) can be read from description
             for name in target_name:
                 if self.description is None or name not in self.description:
@@ -493,7 +492,7 @@ class BaseConcatDataset(ConcatDataset):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
-    def save(self, path, overwrite=False, offset=0):
+    def save(self, path, overwrite=False, offset=0, sink = None):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
             0/
@@ -510,6 +509,150 @@ class BaseConcatDataset(ConcatDataset):
                 window_kwargs.json (if this is a windowed dataset)
                 window_preproc_kwargs.json  (if windows were preprocessed)
                 target_name.json (if target_name is not None and dataset is raw)
+            ...
+
+        Parameters
+        ----------
+        path : str
+            Directory in which subdirectories are created to store
+                -raw.fif | -epo.fif and .json files to.
+        overwrite : bool
+            Whether to delete old subdirectories that will be saved to in this
+            call.
+        offset : int
+            If provided, the integer is added to the id of the dataset in the
+            concat. This is useful in the setting of very large datasets, where
+            one dataset has to be processed and saved at a time to account for
+            its original position.
+        """
+        if len(self.datasets) == 0:
+            raise ValueError("Expect at least one dataset")
+        if not (hasattr(self.datasets[0], 'raw') or hasattr(
+                self.datasets[0], 'windows')):
+            raise ValueError("dataset should have either raw or windows "
+                                "attribute")
+        path_contents = os.listdir(path)
+        n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
+        close_sink=False
+        if sink is None:
+            close_sink=True
+            sink = wds.ShardWriter(os.path.join(path, "sample-data-%06d.tar"), maxcount=5000)
+        for i_ds, ds in enumerate(self.datasets):
+            # remove subdirectory from list of untouched files / subdirectories
+            if str(i_ds + offset) in path_contents:
+                path_contents.remove(str(i_ds + offset))
+            # save_dir/i_ds/
+            # sub_dir = os.path.join(path, str(i_ds + offset))
+            # if os.path.exists(sub_dir):
+            #     if overwrite:
+            #         shutil.rmtree(sub_dir)
+            #     else:
+            #         raise FileExistsError(
+            #             f'Subdirectory {sub_dir} already exists. Please select'
+            #             f' a different directory, set overwrite=True, or '
+            #             f'resolve manually.')
+            # save_dir/{i_ds+offset}/
+            #os.makedirs(sub_dir)
+            # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
+            cls = True if "arousal" in ds.description else False
+            print("cls: ", cls)
+            print("ds.description: ", ds.description)
+            offset+= self._save_to_tar(sink, ds, i_ds, offset, cls=cls)
+
+        if overwrite:
+            # the following will be True for all datasets preprocessed and
+            # stored in parallel with braindecode.preprocessing.preprocess
+            if i_ds+1+offset < n_sub_dirs:
+                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
+                                f"does not match the number of existing "
+                                f"subdirectories ({n_sub_dirs}). You may now "
+                                f"encounter a mix of differently preprocessed "
+                                f"datasets!", UserWarning)
+        # if path contains files or directories that were not touched, raise
+        # warning
+        if path_contents:
+            warnings.warn(f'Chosen directory {path} contains other '
+                        f'subdirectories or files {path_contents}.')
+        if close_sink:
+            sink.close()
+
+    def _save_to_tar(self, sink, ds, i_ds, offset, cls=False):
+        raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'windows'
+        if raw_or_epo == 'raw':
+            offset = self._save_to_tar_raw(sink, ds, i_ds, offset, cls=cls)
+        else:
+            offset = self._save_to_tar_epo(sink, ds, i_ds, offset, cls=cls)
+        return offset
+
+    @staticmethod
+    def _save_to_tar_raw(sink, ds, i_ds, offset, cls=False):
+        data = getattr(ds, "raw")["data"][0]
+        if cls:
+            labels_raw = np.array([ds.description["valence"], ds.description["arousal"]])
+            label = compute_label(labels_raw)
+            sample = {
+                "__key__": "sample%06d" % (i_ds+offset),
+                "input.npy": np.float32(data),
+                "output.npy": label,
+            }
+            sink.write(sample)
+        else:
+            sample = {
+                "__key__": "sample%06d" % (i_ds+offset),
+                "input.npy": np.float32(data),
+            }
+            sink.write(sample)
+        return 0
+
+    @staticmethod
+    def _save_to_tar_epo(sink, ds, i_ds, offset, cls=False):
+        data = getattr(ds, 'windows').get_data()
+        for i,data_win in enumerate(data):
+            if cls:
+                labels_raw = np.array([ds.description["valence"], ds.description["arousal"]])
+                label = compute_label(labels_raw)
+                sample = {
+                    "__key__": "sample%06d" % (i_ds+offset+i),
+                    "input.npy": np.float32(data_win),
+                    "output.npy": label,
+                }
+                sink.write(sample)
+            else:
+                sample = {
+                    "__key__": "sample%06d" % (i_ds+offset+i),
+                    "input.npy": np.float32(data_win),
+                }
+                sink.write(sample)
+        return data.shape[0]
+
+    @staticmethod
+    def _save_to_tar_ssl(sink, ds, i_ds, offset):
+        raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'windows'
+        data = getattr(ds, raw_or_epo)["data"][0]
+        sample = {
+            "__key__": "sample%06d" % (i_ds+offset),
+            "input.npy": np.float32(data),
+        }
+        sink.write(sample)
+
+    def save_fif(self, path, overwrite=False, offset=0):
+        """Save datasets to files by creating one subdirectory for each dataset:
+        path/
+            0/
+                0-raw.fif | 0-epo.fif
+                description.json
+                raw_preproc_kwargs.json (if raws were preprocessed)
+                window_kwargs.json (if this is a windowed dataset)
+                window_preproc_kwargs.json  (if windows were preprocessed)
+                target_name.json (if target_name is not None and dataset is raw)
+            1/
+                1-raw.fif | 1-epo.fif
+                description.json
+                raw_preproc_kwargs.json (if raws were preprocessed)
+                window_kwargs.json (if this is a windowed dataset)
+                window_preproc_kwargs.json  (if windows were preprocessed)
+                target_name.json (if target_name is not None and dataset is raw)
+            ...
 
         Parameters
         ----------
@@ -612,3 +755,32 @@ class BaseConcatDataset(ConcatDataset):
             target_file_path = os.path.join(sub_dir, 'target_name.json')
             with open(target_file_path, 'w') as f:
                 json.dump({'target_name': ds.target_name}, f)
+
+
+def compute_label(label: np.array): 
+    label = (label - 1) / (9 - 1)
+    label = np.where(label > 0.5, 1, 0)
+
+    if label[0] == 0 and label[1] == 0:
+        label = np.array([0])
+    elif label[0] == 0 and label[1] == 1:
+        label = np.array([1])
+    elif label[0] == 1 and label[1] == 0:
+        label = np.array([2])
+    elif label[0] == 1 and label[1] == 1:
+        label = np.array([3])
+
+    return label
+
+def obtain_sample(ds, raw_or_epo):
+    for index, filename in enumerate(sample_dirs):
+        data = getattr(ds, raw_or_epo)["data"][0]
+        labels_raw = ds.description["valence"], ds.description["arousal"]
+        print(labels_raw)
+        label = self.compute_label(labels_raw)
+        sample = {
+            "__key__": "sample%06d" % index,
+            "input.npy": np.float32(data),
+            "output.npy": label,
+        }
+        yield sample

@@ -12,11 +12,12 @@ from warnings import warn
 from functools import partial
 from collections.abc import Iterable
 
+import os
 import numpy as np
 import pandas as pd
-from mne import create_info
 from sklearn.utils import deprecated
 from joblib import Parallel, delayed
+import webdataset as wds
 
 from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
 from braindecode.datautil.serialization import (
@@ -48,7 +49,6 @@ class Preprocessor(object):
     kwargs:
         Keyword arguments to be forwarded to the MNE function.
     """
-
     def __init__(self, fn, *, apply_on_array=True, **kwargs):
         if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
             warn('Preprocessing choices with lambda functions cannot be saved.')
@@ -97,7 +97,6 @@ class MNEPreproc(Preprocessor):
     kwargs:
         Keyword arguments will be forwarded to the mne function
     """
-
     def __init__(self, fn, **kwargs):
         super().__init__(fn, apply_on_array=False, **kwargs)
 
@@ -116,7 +115,6 @@ class NumpyPreproc(Preprocessor):
     kwargs:
         Keyword arguments will be forwarded to the function
     """
-
     def __init__(self, fn, channel_wise=False, **kwargs):
         assert callable(fn), 'fn must be callable.'
         super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
@@ -162,9 +160,19 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
+    
     list_of_ds = Parallel(n_jobs=n_jobs)(
         delayed(_preprocess)(ds, i, preprocessors, save_dir, overwrite)
         for i, ds in enumerate(concat_ds.datasets))
+
+    # if save_dir is not None:
+    #     maxcount = 500
+    #     list_of_ds_save = [list_of_ds[i:i+maxcount] for i in range(0, len(list_of_ds), maxcount)]
+    #     with wds.ShardWriter(os.path.join(save_dir, "sample-data-%06d.tar"), maxcount=500, start_shard=0) as sink:
+    #         for i, list_of_ds in enumerate(list_of_ds_save):
+    #             concat_ds = BaseConcatDataset(list_of_ds)
+    #             concat_ds.save(save_dir, overwrite=overwrite, offset=i*maxcount, sink = sink)
+
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         concat_ds_reloaded = load_concat_dataset(
@@ -240,7 +248,7 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
 
     if save_dir is not None:
         concat_ds = BaseConcatDataset([ds])
-        concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
+        concat_ds.save_fif(save_dir, overwrite=overwrite, offset=ds_index)
     else:
         return ds
 
@@ -470,15 +478,8 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         # when applying filters and channels cant be added if they have
         # different such parameters. Not needed when making picks as
         # high pass is not modified by filter if pick is specified
-
-        ch_names = filtered.info.ch_names
-        ch_types = filtered.info.get_channel_types()
-        sampling_freq = filtered.info['sfreq']
-
-        info = create_info(ch_names=ch_names, ch_types=ch_types, sfreq=sampling_freq)
-
-        filtered.info = info
-
+        filtered.info["highpass"] = raw.info["highpass"]
+        filtered.info["lowpass"] = raw.info["lowpass"]
         # add frequency band annotation to channel names
         # truncate to a max of 15 characters, since mne does not allow for more
         filtered.rename_channels({
