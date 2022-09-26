@@ -492,6 +492,22 @@ class BaseConcatDataset(ConcatDataset):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
+    def transform_label(self, fun_dict):
+        """Tranform labels and add them to the description.
+        Args:
+            fun_dict ({str:callable}): list of labels transforms to apply and add to the descriptions
+        """
+        for _, dataset in enumerate(self.datasets):
+            for key, fun in fun_dict.items():
+                dataset.description[key] = fun(dataset.description)
+
+    def set_target(self, new_target):
+        """Set the target of the dataset to a new target.
+            new_target hat to be a column in the description."""
+        for _, dataset in enumerate(self.datasets):
+            dataset.target_name = new_target
+        return self
+
     def save(self, path, overwrite=False, offset=0, sink = None, prefix = "sample"):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
@@ -615,21 +631,11 @@ class BaseConcatDataset(ConcatDataset):
                 sink.write(sample)
             else:
                 sample = {
-                    "__key__": "sample%06d" % (i_ds+offset+i),
+                    "__key__": prefix+"%06d" % (i_ds+offset+i),
                     "input.npy": np.float32(data_win),
                 }
                 sink.write(sample)
         return data.shape[0]
-
-    @staticmethod
-    def _save_to_tar_ssl(sink, ds, i_ds, offset):
-        raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'windows'
-        data = getattr(ds, raw_or_epo)["data"][0]
-        sample = {
-            "__key__": "sample%06d" % (i_ds+offset),
-            "input.npy": np.float32(data),
-        }
-        sink.write(sample)
 
     def save_fif(self, path, overwrite=False, offset=0):
         """Save datasets to files by creating one subdirectory for each dataset:
