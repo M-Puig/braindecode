@@ -555,7 +555,7 @@ class BaseConcatDataset(ConcatDataset):
             #os.makedirs(sub_dir)
             # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
             cls = True if "arousal" in ds.description else False
-            offset+= self._save_to_tar(sink, ds, i_ds, offset, cls=cls, prefix = "sample")
+            offset+= self._save_to_tar(sink, ds, i_ds, offset, cls=cls, prefix = prefix)
 
         if overwrite:
             # the following will be True for all datasets preprocessed and
