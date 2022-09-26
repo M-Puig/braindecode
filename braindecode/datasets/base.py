@@ -492,7 +492,7 @@ class BaseConcatDataset(ConcatDataset):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
-    def save(self, path, overwrite=False, offset=0, sink = None):
+    def save(self, path, overwrite=False, offset=0, sink = None, prefix = "sample"):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
             0/
@@ -536,7 +536,7 @@ class BaseConcatDataset(ConcatDataset):
         close_sink=False
         if sink is None:
             close_sink=True
-            sink = wds.ShardWriter(os.path.join(path, "sample-data-%06d.tar"), maxcount=5000)
+            sink = wds.ShardWriter(os.path.join(path, prefix+"-data-%06d.tar"), maxcount=5000)
         for i_ds, ds in enumerate(self.datasets):
             # remove subdirectory from list of untouched files / subdirectories
             if str(i_ds + offset) in path_contents:
@@ -555,9 +555,7 @@ class BaseConcatDataset(ConcatDataset):
             #os.makedirs(sub_dir)
             # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
             cls = True if "arousal" in ds.description else False
-            print("cls: ", cls)
-            print("ds.description: ", ds.description)
-            offset+= self._save_to_tar(sink, ds, i_ds, offset, cls=cls)
+            offset+= self._save_to_tar(sink, ds, i_ds, offset, cls=cls, prefix = "sample")
 
         if overwrite:
             # the following will be True for all datasets preprocessed and
@@ -576,43 +574,41 @@ class BaseConcatDataset(ConcatDataset):
         if close_sink:
             sink.close()
 
-    def _save_to_tar(self, sink, ds, i_ds, offset, cls=False):
+    def _save_to_tar(self, sink, ds, i_ds, offset, cls=False, prefix = "sample"):
         raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'windows'
         if raw_or_epo == 'raw':
-            offset = self._save_to_tar_raw(sink, ds, i_ds, offset, cls=cls)
+            offset = self._save_to_tar_raw(sink, ds, i_ds, offset, cls=cls, prefix = prefix)
         else:
             offset = self._save_to_tar_epo(sink, ds, i_ds, offset, cls=cls)
         return offset
 
-    @staticmethod
-    def _save_to_tar_raw(sink, ds, i_ds, offset, cls=False):
+    def _save_to_tar_raw(self, sink, ds, i_ds, offset, cls=False, prefix = "sample"):
         data = getattr(ds, "raw")["data"][0]
         if cls:
             labels_raw = np.array([ds.description["valence"], ds.description["arousal"]])
-            label = compute_label(labels_raw)
+            label = self.compute_label(labels_raw)
             sample = {
-                "__key__": "sample%06d" % (i_ds+offset),
+                "__key__": prefix+"%06d" % (i_ds+offset),
                 "input.npy": np.float32(data),
                 "output.npy": label,
             }
             sink.write(sample)
         else:
             sample = {
-                "__key__": "sample%06d" % (i_ds+offset),
+                "__key__": prefix+"%06d" % (i_ds+offset),
                 "input.npy": np.float32(data),
             }
             sink.write(sample)
         return 0
 
-    @staticmethod
-    def _save_to_tar_epo(sink, ds, i_ds, offset, cls=False):
+    def _save_to_tar_epo(self, sink, ds, i_ds, offset, cls=False, prefix = "sample"):
         data = getattr(ds, 'windows').get_data()
         for i,data_win in enumerate(data):
             if cls:
                 labels_raw = np.array([ds.description["valence"], ds.description["arousal"]])
-                label = compute_label(labels_raw)
+                label = self.compute_label(labels_raw)
                 sample = {
-                    "__key__": "sample%06d" % (i_ds+offset+i),
+                    "__key__": prefix+"%06d" % (i_ds+offset+i),
                     "input.npy": np.float32(data_win),
                     "output.npy": label,
                 }
@@ -756,31 +752,18 @@ class BaseConcatDataset(ConcatDataset):
             with open(target_file_path, 'w') as f:
                 json.dump({'target_name': ds.target_name}, f)
 
+    @staticmethod
+    def compute_label(label: np.array): 
+        label = (label - 1) / (9 - 1)
+        label = np.where(label > 0.5, 1, 0)
 
-def compute_label(label: np.array): 
-    label = (label - 1) / (9 - 1)
-    label = np.where(label > 0.5, 1, 0)
+        if label[0] == 0 and label[1] == 0:
+            label = np.array([0])
+        elif label[0] == 0 and label[1] == 1:
+            label = np.array([1])
+        elif label[0] == 1 and label[1] == 0:
+            label = np.array([2])
+        elif label[0] == 1 and label[1] == 1:
+            label = np.array([3])
 
-    if label[0] == 0 and label[1] == 0:
-        label = np.array([0])
-    elif label[0] == 0 and label[1] == 1:
-        label = np.array([1])
-    elif label[0] == 1 and label[1] == 0:
-        label = np.array([2])
-    elif label[0] == 1 and label[1] == 1:
-        label = np.array([3])
-
-    return label
-
-def obtain_sample(ds, raw_or_epo):
-    for index, filename in enumerate(sample_dirs):
-        data = getattr(ds, raw_or_epo)["data"][0]
-        labels_raw = ds.description["valence"], ds.description["arousal"]
-        print(labels_raw)
-        label = self.compute_label(labels_raw)
-        sample = {
-            "__key__": "sample%06d" % index,
-            "input.npy": np.float32(data),
-            "output.npy": label,
-        }
-        yield sample
+        return label
