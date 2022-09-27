@@ -617,20 +617,19 @@ class BaseConcatDataset(ConcatDataset):
 
     def _save_to_tar_epo(self, sink, ds, i_ds, offset, prefix = "sample"):
         data = getattr(ds, 'windows').get_data()
-        if ds.target_name is not None:
-            if ds.description[ds.target_name] is not None:
-                for i,data_win in enumerate(data):
-                    sample = {
-                        "__key__": prefix+"%06d" % (i_ds+offset+i),
-                        "input.npy": np.float32(data_win),
-                        "output.npy": ds.description[ds.target_name],
-                    }
-                    sink.write(sample)
+        if all(y==-1 for y in ds.y):
+            for i,data_win in enumerate(data):
+                sample = {
+                    "__key__": prefix+"%06d" % (i_ds+offset+i),
+                    "input.npy": np.float32(data_win),
+                }
+                sink.write(sample)
         else:
             for i,data_win in enumerate(data):
                 sample = {
                     "__key__": prefix+"%06d" % (i_ds+offset+i),
                     "input.npy": np.float32(data_win),
+                    "output.npy": ds.y[i],
                 }
                 sink.write(sample)
         return data.shape[0]
