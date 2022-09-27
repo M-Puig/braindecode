@@ -570,8 +570,7 @@ class BaseConcatDataset(ConcatDataset):
             # save_dir/{i_ds+offset}/
             #os.makedirs(sub_dir)
             # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
-            cls = True if "arousal" in ds.description else False
-            offset+= self._save_to_tar(sink, ds, i_ds, offset, cls=cls, prefix = prefix)
+            offset+= self._save_to_tar(sink, ds, i_ds, offset, prefix = prefix)
 
         if overwrite:
             # the following will be True for all datasets preprocessed and
@@ -590,25 +589,24 @@ class BaseConcatDataset(ConcatDataset):
         if close_sink:
             sink.close()
 
-    def _save_to_tar(self, sink, ds, i_ds, offset, cls=False, prefix = "sample"):
+    def _save_to_tar(self, sink, ds, i_ds, offset, prefix = "sample"):
         raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'windows'
         if raw_or_epo == 'raw':
-            offset = self._save_to_tar_raw(sink, ds, i_ds, offset, cls=cls, prefix = prefix)
+            offset = self._save_to_tar_raw(sink, ds, i_ds, offset, prefix = prefix)
         else:
-            offset = self._save_to_tar_epo(sink, ds, i_ds, offset, cls=cls)
+            offset = self._save_to_tar_epo(sink, ds, i_ds, offset)
         return offset
 
-    def _save_to_tar_raw(self, sink, ds, i_ds, offset, cls=False, prefix = "sample"):
+    def _save_to_tar_raw(self, sink, ds, i_ds, offset, prefix = "sample"):
         data = getattr(ds, "raw")["data"][0]
-        if cls:
-            labels_raw = np.array([ds.description["valence"], ds.description["arousal"]])
-            label = self.compute_label(labels_raw)
-            sample = {
-                "__key__": prefix+"%06d" % (i_ds+offset),
-                "input.npy": np.float32(data),
-                "output.npy": label,
-            }
-            sink.write(sample)
+        if ds.target_name is not None:
+            if ds.description[ds.target_name] is not None:
+                sample = {
+                    "__key__": prefix+"%06d" % (i_ds+offset),
+                    "input.npy": np.float32(data),
+                    "output.npy": ds.description[ds.target_name],
+                }
+                sink.write(sample)
         else:
             sample = {
                 "__key__": prefix+"%06d" % (i_ds+offset),
@@ -617,19 +615,19 @@ class BaseConcatDataset(ConcatDataset):
             sink.write(sample)
         return 0
 
-    def _save_to_tar_epo(self, sink, ds, i_ds, offset, cls=False, prefix = "sample"):
+    def _save_to_tar_epo(self, sink, ds, i_ds, offset, prefix = "sample"):
         data = getattr(ds, 'windows').get_data()
-        for i,data_win in enumerate(data):
-            if cls:
-                labels_raw = np.array([ds.description["valence"], ds.description["arousal"]])
-                label = self.compute_label(labels_raw)
-                sample = {
-                    "__key__": prefix+"%06d" % (i_ds+offset+i),
-                    "input.npy": np.float32(data_win),
-                    "output.npy": label,
-                }
-                sink.write(sample)
-            else:
+        if ds.target_name is not None:
+            if ds.description[ds.target_name] is not None:
+                for i,data_win in enumerate(data):
+                    sample = {
+                        "__key__": prefix+"%06d" % (i_ds+offset+i),
+                        "input.npy": np.float32(data_win),
+                        "output.npy": ds.description[ds.target_name],
+                    }
+                    sink.write(sample)
+        else:
+            for i,data_win in enumerate(data):
                 sample = {
                     "__key__": prefix+"%06d" % (i_ds+offset+i),
                     "input.npy": np.float32(data_win),
