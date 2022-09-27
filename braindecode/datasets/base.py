@@ -629,7 +629,7 @@ class BaseConcatDataset(ConcatDataset):
                 sample = {
                     "__key__": prefix+"%06d" % (i_ds+offset+i),
                     "input.npy": np.float32(data_win),
-                    "output.npy": ds.y[i],
+                    "output.npy": np.asarray([ds.y[i]]),
                 }
                 sink.write(sample)
         return data.shape[0]
