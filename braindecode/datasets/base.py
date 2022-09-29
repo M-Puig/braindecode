@@ -712,22 +712,22 @@ class BaseConcatDataset(ConcatDataset):
 
         if ds.target_name is not None:
             if ds.description[ds.target_name] is not None:
-                np.save(os.path.join(path, f"prefix+ {i_ds+offset:06d}+input.npy"), np.float32(data))
-                np.save(os.path.join(path, f"prefix+ {i_ds+offset:06d}+output.npy"), ds.description[ds.target_name])
+                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.input.npy"), np.float32(data))
+                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.output.npy"), ds.description[ds.target_name])
         else:
-                np.save(os.path.join(path, f"prefix+ {i_ds+offset:06d}+input.npy"), np.float32(data))
+                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.input.npy"), np.float32(data))
         return 0
 
     def _save_to_map_epo(self, path, ds, i_ds, offset, prefix = "sample"):
         data = getattr(ds, 'windows').get_data()
         if all(y==-1 for y in ds.y):
             for i,data_win in enumerate(data):
-                np.save(os.path.join(path, f"prefix+ {i_ds+offset+i:06d}+input.npy"), np.float32(data_win))
+                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.input.npy"), np.float32(data_win))
 
         else:
             for i,data_win in enumerate(data):
-                np.save(os.path.join(path, f"prefix+ {i_ds+offset+i:06d}+input.npy"), np.float32(data_win))
-                np.save(os.path.join(path, f"prefix+ {i_ds+offset+i:06d}+output.npy"), ds.y[i])
+                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.input.npy"), np.float32(data_win))
+                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.output.npy"), ds.y[i])
 
         return data.shape[0]
 
