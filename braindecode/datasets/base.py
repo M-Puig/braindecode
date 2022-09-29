@@ -634,6 +634,103 @@ class BaseConcatDataset(ConcatDataset):
                 sink.write(sample)
         return data.shape[0]
 
+
+    def save_map(self, path, overwrite=False, offset=0, prefix = "sample"):
+        """Save datasets to files by creating one subdirectory for each dataset:
+        path/
+            0/
+                0-raw.fif | 0-epo.fif
+                description.json
+                raw_preproc_kwargs.json (if raws were preprocessed)
+                window_kwargs.json (if this is a windowed dataset)
+                window_preproc_kwargs.json  (if windows were preprocessed)
+                target_name.json (if target_name is not None and dataset is raw)
+            1/
+                1-raw.fif | 1-epo.fif
+                description.json
+                raw_preproc_kwargs.json (if raws were preprocessed)
+                window_kwargs.json (if this is a windowed dataset)
+                window_preproc_kwargs.json  (if windows were preprocessed)
+                target_name.json (if target_name is not None and dataset is raw)
+            ...
+
+        Parameters
+        ----------
+        path : str
+            Directory in which subdirectories are created to store
+                -raw.fif | -epo.fif and .json files to.
+        overwrite : bool
+            Whether to delete old subdirectories that will be saved to in this
+            call.
+        offset : int
+            If provided, the integer is added to the id of the dataset in the
+            concat. This is useful in the setting of very large datasets, where
+            one dataset has to be processed and saved at a time to account for
+            its original position.
+        """
+        if len(self.datasets) == 0:
+            raise ValueError("Expect at least one dataset")
+        if not (hasattr(self.datasets[0], 'raw') or hasattr(
+                self.datasets[0], 'windows')):
+            raise ValueError("dataset should have either raw or windows "
+                                "attribute")
+        path_contents = os.listdir(path)
+        n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
+        for i_ds, ds in enumerate(self.datasets):
+            # remove subdirectory from list of untouched files / subdirectories
+            if str(i_ds + offset) in path_contents:
+                path_contents.remove(str(i_ds + offset))
+
+            offset+= self._save_to_map(path, ds, i_ds, offset, prefix = prefix)
+
+        if overwrite:
+            # the following will be True for all datasets preprocessed and
+            # stored in parallel with braindecode.preprocessing.preprocess
+            if i_ds+1+offset < n_sub_dirs:
+                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
+                                f"does not match the number of existing "
+                                f"subdirectories ({n_sub_dirs}). You may now "
+                                f"encounter a mix of differently preprocessed "
+                                f"datasets!", UserWarning)
+        # if path contains files or directories that were not touched, raise
+        # warning
+        if path_contents:
+            warnings.warn(f'Chosen directory {path} contains other '
+                        f'subdirectories or files {path_contents}.')
+
+
+    def _save_to_map(self, path, ds, i_ds, offset, prefix = "sample"):
+        raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'windows'
+        if raw_or_epo == 'raw':
+            offset = self._save_to_map_raw(path, ds, i_ds, offset, prefix = prefix)
+        else:
+            offset = self._save_to_map_epo(path, ds, i_ds, offset)
+        return offset
+
+    def _save_to_map_raw(self, path, ds, i_ds, offset, prefix = "sample"):
+        data = getattr(ds, "raw")["data"][0]
+
+        if ds.target_name is not None:
+            if ds.description[ds.target_name] is not None:
+                np.save(os.path.join(path, f"prefix+ {i_ds+offset:%06d}+input.npy"), np.float32(data))
+                np.save(os.path.join(path, f"prefix+ {i_ds+offset:%06d}+output.npy"), ds.description[ds.target_name])
+        else:
+                np.save(os.path.join(path, f"prefix+ {i_ds+offset:%06d}+input.npy"), np.float32(data))
+        return 0
+
+    def _save_to_map_epo(self, path, ds, i_ds, offset, prefix = "sample"):
+        data = getattr(ds, 'windows').get_data()
+        if all(y==-1 for y in ds.y):
+            for i,data_win in enumerate(data):
+                np.save(os.path.join(path, f"prefix+ {i_ds+offset+i:%06d}+input.npy"), np.float32(data_win))
+
+        else:
+            for i,data_win in enumerate(data):
+                np.save(os.path.join(path, f"prefix+ {i_ds+offset+i:%06d}+input.npy"), np.float32(data_win))
+                np.save(os.path.join(path, f"prefix+ {i_ds+offset+i:%06d}+output.npy"), ds.y[i])
+
+        return data.shape[0]
+
     def save_fif(self, path, overwrite=False, offset=0):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
