@@ -583,9 +583,9 @@ class BaseConcatDataset(ConcatDataset):
                                 f"datasets!", UserWarning)
         # if path contains files or directories that were not touched, raise
         # warning
-        if path_contents:
-            warnings.warn(f'Chosen directory {path} contains other '
-                        f'subdirectories or files {path_contents}.')
+        # if path_contents:
+        #     warnings.warn(f'Chosen directory {path} contains other '
+        #                 f'subdirectories or files {path_contents}.')
         if close_sink:
             sink.close()
 
@@ -694,9 +694,9 @@ class BaseConcatDataset(ConcatDataset):
                                 f"datasets!", UserWarning)
         # if path contains files or directories that were not touched, raise
         # warning
-        if path_contents:
-            warnings.warn(f'Chosen directory {path} contains other '
-                        f'subdirectories or files {path_contents}.')
+        # if path_contents:
+        #     warnings.warn(f'Chosen directory {path} contains other '
+        #                 f'subdirectories or files {path_contents}.')
 
 
     def _save_to_map(self, path, ds, i_ds, offset, prefix = "sample"):
@@ -809,9 +809,9 @@ class BaseConcatDataset(ConcatDataset):
                               f"datasets!", UserWarning)
         # if path contains files or directories that were not touched, raise
         # warning
-        if path_contents:
-            warnings.warn(f'Chosen directory {path} contains other '
-                          f'subdirectories or files {path_contents}.')
+        # if path_contents:
+        #     warnings.warn(f'Chosen directory {path} contains other '
+        #                   f'subdirectories or files {path_contents}.')
 
     @staticmethod
     def _save_signals(sub_dir, ds, i_ds, offset):
