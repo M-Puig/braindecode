@@ -704,7 +704,7 @@ class BaseConcatDataset(ConcatDataset):
         if raw_or_epo == 'raw':
             offset = self._save_to_map_raw(path, ds, i_ds, offset, prefix = prefix)
         else:
-            offset = self._save_to_map_epo(path, ds, i_ds, offset)
+            offset = self._save_to_map_epo(path, ds, i_ds, offset, prefix=prefix)
         return offset
 
     def _save_to_map_raw(self, path, ds, i_ds, offset, prefix = "sample"):
