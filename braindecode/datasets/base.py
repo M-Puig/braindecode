@@ -722,12 +722,12 @@ class BaseConcatDataset(ConcatDataset):
         data = getattr(ds, 'windows').get_data()
         if all(y==-1 for y in ds.y):
             for i,data_win in enumerate(data):
-                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.input.npy"), np.float32(data_win))
+                np.save(os.path.join(path, f"{prefix}{i+i_ds+offset:06d}.input.npy"), np.float32(data_win))
 
         else:
             for i,data_win in enumerate(data):
-                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.input.npy"), np.float32(data_win))
-                np.save(os.path.join(path, f"{prefix}{i_ds+offset:06d}.output.npy"), ds.y[i])
+                np.save(os.path.join(path, f"{prefix}{i+i_ds+offset:06d}.input.npy"), np.float32(data_win))
+                np.save(os.path.join(path, f"{prefix}{i+i_ds+offset:06d}.output.npy"), ds.y[i])
 
         return data.shape[0]
 
