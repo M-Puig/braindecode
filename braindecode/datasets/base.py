@@ -720,7 +720,7 @@ class BaseConcatDataset(ConcatDataset):
 
     def _save_to_map_epo(self, path, ds, i_ds, offset, prefix = "sample"):
         data = getattr(ds, 'windows').get_data()
-        if all(y==-1 for y in ds.y):
+        if all((y==-1 or y is None) for y in ds.y) or ds.target_name is None:
             for i,data_win in enumerate(data):
                 np.save(os.path.join(path, f"{prefix}{i+i_ds+offset:06d}.input.npy"), np.float32(data_win))
 
